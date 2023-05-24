@@ -2,7 +2,7 @@
 
 # Imports 
 import pyranges as pr
-import pyranges.out as out ####################################################################################################################### I DID NOT FIND ANY OTHER WAY TO DO THIS
+import pyranges.out as out ########################################################################################### I DID NOT FIND ANY OTHER WAY TO DO THIS
 import csv 
 from pyfaidx import Fasta
 import pandas as pd
@@ -46,7 +46,7 @@ def extend_orfs(p = None, as_df = False, fasta_path = None, cds_id = None,
        chunk_size : the size to be extended on each direction. Default 900.
     """
 
-    # Sanity Check
+    # Sanity Checks
     assert p is not None, "Please, provide the path to a Pyranges instance."
 
     assert fasta_path is not None, "Please, provide the path to a Fasta file."
@@ -61,10 +61,28 @@ def extend_orfs(p = None, as_df = False, fasta_path = None, cds_id = None,
        msg = "Please, ensure all patterns have a length of 3 nt."
        assert set([len(i) for i in pattern]) == {3},msg
        
+
     # So all subsequent steps can be done with group_by:
     if cds_id is None: 
         cds_id = 'Custom_ID'
         p_df[cds_id] = [i for i in range(len(p))] #Generates a New Column
+
+
+    # Show a warning if some transcript lengths are not divisible by 3:
+    p_df['length'] = p_df['End'] - p_df['Start'] 
+
+    module_3 = p_df.groupby(by = cds_id)\
+                       .apply(lambda x: sum(x['length']) % 3)
+    
+    ndv = module_3.loc[~module_3.isin([0])] # Those not divisible by 3
+
+    if len(ndv.index) > 0: 
+        printerr("\nWARNING!\nSome input lenghts are not divisible by 3:\n",
+             how='bright,yellow')
+        printerr(ndv, how='bright,yellow')
+
+    p_df.drop(labels=['length'], inplace=True, axis=1) # Drop unnecessary column                                           
+
 
     # Load Sequence Data from a Fasta file
     fs = Fasta(fasta_path) #pyfaidx_fasta object, fasta sequences
@@ -101,7 +119,7 @@ def extend_orfs(p = None, as_df = False, fasta_path = None, cds_id = None,
             # 2/ Select Subsequence
             # Only one row per cds_id. 
             # Without strand=True does not work for - Stand
-            pup_i = pup_i.subsequence(0,chunk_size,by=cds_id,strand=True) 
+            pup_i = pup_i.subsequence(0,chunk_size,by=cds_id,strand=True) ###################################### At some point, change this for spliced_subsequence
 
             # 3/ Adjust Subsequence to Chromosome Boundaries
             # Clip Out of Bounds Intervals
@@ -177,11 +195,12 @@ def extend_orfs(p = None, as_df = False, fasta_path = None, cds_id = None,
         ic = 0 #Iteration Counter
 
         while len(pdp_i) > 0: #Iterate until it is empty
+#        for i in range(1):
 
             # 2/ Select Subsequence
             # From -chunk_size nt before the end, up to the end. 
             # Without strand=True does not work for - Stand
-            pdp_i = pdp_i.subsequence(-chunk_size,by=cds_id,strand=True) 
+            pdp_i = pdp_i.subsequence(-chunk_size,by=cds_id,strand=True) ###################################### At some point, change this for spliced_subsequence
 
             # 3/ Adjust Subsequence to Chromosome Boundaries
             # Clip Out of Bounds Intervals
@@ -190,6 +209,7 @@ def extend_orfs(p = None, as_df = False, fasta_path = None, cds_id = None,
             pdp_i_df = mod_genome_bounds(pdp_i, d_c) 
 
             #ext3 is a dataframe with ID and Sequence that must be merged to pup 
+#            pdp_i_df = pdp_i.df
             seqs = pdp_i_df.apply(lambda x: mod_get_sequence(x, pyfaidx_fasta=fs), axis=1)
             ext3 = pd.DataFrame(pdp_i_df[cds_id])
             ext3['Sequence'] = seqs
@@ -381,19 +401,21 @@ def filler(p, stream, dictionary, chunk_size, ic):
 
     """
     If no pattern has been found for a given range (i.e. pattern_position == -1)
-    Returns the Extension corresponding to the Full Sequence or the longest one
+    returns the Extension corresponding to the Full Sequence or the longest one
     possible multiple of 3.
     If a pattern has been found, return the corresponding extension.
     """
 
     if stream == 'up':
-        if p['up_start_pos'] == -1:
+        if p['up_start_pos'] == -1: 
             if p['Strand'] == '+':
-                return p['Initial_Start'] 
+                extension = p['Initial_Start'] # Extension to the edge
+                return extension - extension % 3 # Extension corrected
 
             elif p['Strand'] == '-':
-                return ( (dictionary[p['True_Chromosome']] - p['Initial_End']) -
-                       (dictionary[p['True_Chromosome']] % 3) )
+                extension = dictionary[p['True_Chromosome']] - p['Initial_End']
+                return extension - extension % 3
+
         else:
            return ( p['Effective_Extension_Length'] - 
                     p['up_start_pos'] + chunk_size * ic )
@@ -401,11 +423,13 @@ def filler(p, stream, dictionary, chunk_size, ic):
     elif stream == 'down':
         if p['down_stop_pos'] == -1:
             if p['Strand'] == '+': 
-                return ( (dictionary[p['True_Chromosome']] - p['Initial_End']) -
-                       (dictionary[p['True_Chromosome']] % 3) )
+                extension = dictionary[p['True_Chromosome']] - p['Initial_End']
+                return extension - extension % 3
 
             elif p['Strand'] == '-':
-                return p['Initial_Start'] 
+                 extension = p['Initial_Start']
+                 return extension - extension % 3 
+
         else:
             return ( p['down_stop_pos'] + chunk_size * ic )
 
@@ -449,6 +473,7 @@ def _extend_grp_j(df, **kwargs):
 
     return df
 
+#def mod_to_gff3(df, path=None, compression="infer", map_cols=None):
 def mod_to_gff3(df, path=None, compression="infer"):
 
     """Modified version of pyranges.out._to_gff3
@@ -519,7 +544,7 @@ if __name__ == "__main__":
         daf['Strand'] = daf['Strand'].astype("string") #So the Pyragnes object is correctly labelled as stranded
 
     else:
-        pyr = opt['p'] #################################################################################################################################################### THINK ABOUT THIS
+        pyr = opt['p'] ############################################################################################################################# THINK ABOUT THIS
 
     output = extend_orfs(p=daf, as_df=opt['as_df'] if opt['as_df'] else None, 
                          fasta_path=opt['fasta_path'],
