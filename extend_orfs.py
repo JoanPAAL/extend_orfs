@@ -439,7 +439,12 @@ def mod_extend(p, group_by):
     The modifications allow for a specific 'chunk' extension for each group.
     """
 
-    kwargs = pr.pyranges.fill_kwargs({"strand": p.stranded})
+    try: 
+        kwargs = pr.pyranges_main.fill_kwargs({"strand": p.stranded})        
+    except:
+        # backwards compatibility: a submodule in pyranges changed its name
+        kwargs = pr.pyranges.fill_kwargs({"strand": p.stranded})
+        
           
     kwargs['group_by']=group_by
     prg = pr.PyRanges(
